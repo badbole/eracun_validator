@@ -6,37 +6,50 @@ from .result import ValidationResult
 
 
 class Validator:
-    def __init__(self, assets_root):
-        self.assets_root = assets_root
-        self.xsd_validator = XsdValidator(assets_root)
-        self.schematron_validator = SchematronValidator(assets_root)
+    def __init__(self, xsd_validator, schematron_validator):
+        self.xsd_validator = xsd_validator
+        self.schematron_validator = schematron_validator
 
-    def validate(self, xml_path):
-        document_type = detect_document_type(xml_path)
-        profile = detect_profile(xml_path)
+    def validate(self, xml_path, profile):
+        """
+        Validate XML against resolved profile:
+        1. XSD
+        2. Schematron stages (in order)
+        """
+        result = ValidationResult()
 
-        result = ValidationResult(
-            xml_file=xml_path,
-            profile=profile["id"],
-            document_type=document_type,
-            stack=profile["validation_stack"],
-        )
-
+        # -------------------------------------------------
         # 1. XSD validation
-        xsd_ok = self.xsd_validator.validate(
-            xml_path=xml_path,
-            profile=profile,
-            document_type=document_type,
-            result=result,
-        )
-
-        # 2. Schematron only if XSD passed
-        if xsd_ok:
-            schematrons = self._resolve_schematrons(profile["validation_stack"])
-            self.schematron_validator.validate(
+        # -------------------------------------------------
+        xsd_info = profile.get("xsd")
+        if xsd_info:
+            self.xsd_validator.validate(
                 xml_path=xml_path,
-                schematrons=schematrons,
+                xsd_root=xsd_info["path"],
                 result=result,
+            )
+
+            # If XSD failed, schematron must NOT run
+            if result.has_errors():
+                return result
+
+        # -------------------------------------------------
+        # 2. Schematron validation
+        # -------------------------------------------------
+        sch_info = profile.get("schematron")
+        if sch_info:
+            schematron_list = []
+
+            for stage in sch_info.get("stages", []):
+                schematron_list.append({
+                    "id": stage["id"],
+                    "path": os.path.join(stage["path"], stage["main"]),
+                })
+
+            self.schematron_validator.validate(
+                xml_path,
+                schematron_list,
+                result,
             )
 
         return result
