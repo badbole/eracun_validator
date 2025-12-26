@@ -1,7 +1,6 @@
-import os
-from .xsd import XsdValidator
-from .schematron import SchematronValidator
-from .profiles import detect_document_type, detect_profile
+# eracun_validator/validator/core.py
+
+from .profiles import detect_document_type
 from .result import ValidationResult
 
 
@@ -10,75 +9,64 @@ class Validator:
         self.xsd_validator = xsd_validator
         self.schematron_validator = schematron_validator
 
+    # -------------------------------------------------
+    # Public API
+    # -------------------------------------------------
+
     def validate(self, xml_path, profile):
         """
-        Validate XML against resolved profile:
-        1. XSD
-        2. Schematron stages (in order)
+        Execute validation according to resolved profile.
+
+        Returns:
+            ValidationResult
         """
-        result = ValidationResult()
+        document_type = detect_document_type(xml_path)
 
         # -------------------------------------------------
-        # 1. XSD validation
+        # Build validation stack (for reporting only)
         # -------------------------------------------------
-        xsd_info = profile.get("xsd")
-        if xsd_info:
-            self.xsd_validator.validate(
-                xml_path=xml_path,
-                xsd_root=xsd_info["path"],
-                result=result,
+        stack = []
+
+        if "xsd" in profile:
+            stack.append("xsd")
+
+        if "schematron" in profile:
+            for stage in profile["schematron"]["stages"]:
+                stack.append(stage["id"])
+
+        # -------------------------------------------------
+        # Initialize result
+        # -------------------------------------------------
+        result = ValidationResult(
+            xml_file=xml_path,
+            profile=profile["id"],
+            document_type=document_type,
+            stack=stack,
+        )
+
+        # -------------------------------------------------
+        # XSD validation (always first)
+        # -------------------------------------------------
+        if "xsd" in profile:
+            ok = self.xsd_validator.validate(
+                xml_path,
+                profile,
+                document_type,
+                result,
             )
 
-            # If XSD failed, schematron must NOT run
-            if result.has_errors():
+            # If XSD fails → no Schematron
+            if not ok:
                 return result
 
         # -------------------------------------------------
-        # 2. Schematron validation
+        # Schematron validation
         # -------------------------------------------------
-        sch_info = profile.get("schematron")
-        if sch_info:
-            schematron_list = []
-
-            for stage in sch_info.get("stages", []):
-                schematron_list.append({
-                    "id": stage["id"],
-                    "path": os.path.join(stage["path"], stage["main"]),
-                })
-
+        if "schematron" in profile:
             self.schematron_validator.validate(
                 xml_path,
-                schematron_list,
+                profile,
                 result,
             )
 
         return result
-
-    def _resolve_schematrons(self, stack):
-        resolved = []
-
-        for entry in stack:
-            if not entry.startswith("schematron:"):
-                continue
-
-            sid = entry.split(":", 1)[1]
-            sch_path = os.path.join(
-                self.assets_root,
-                "schematron",
-                sid,
-                self._main_schematron_file(sid),
-            )
-
-            resolved.append({
-                "id": sid,
-                "path": sch_path,
-            })
-
-        return resolved
-
-    def _main_schematron_file(self, sid):
-        if sid == "en16931":
-            return "EN16931-UBL-validation.sch"
-        if sid == "hr-cius":
-            return "HR-CIUS-EXT-EN16931-UBL.sch"
-        raise ValueError(f"Unknown schematron id: {sid}")

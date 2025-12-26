@@ -127,23 +127,43 @@ class SchematronValidator:
     # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
-    def validate(self, xml_path, schematron_list, result):
+    def validate(self, xml_path, profile, result):
         """
-        Execute schematron validation in the given order.
-        Each schematron is only executed if previous ones did not fail XSD.
+        Execute schematron validation stages defined by the profile.
         """
-        for sch_info in schematron_list:
-            sch_path = sch_info["path"]
-            source = sch_info["id"]
+        schematron = profile.get("schematron")
+        if not schematron:
+            return
 
+        stages = schematron.get("stages", [])
+
+        for stage in stages:
+            sch_path = os.path.join(
+                stage["path"],
+                stage["main"],
+            )
+            source = stage["id"]
+
+            # -------------------------------------------------
+            # Compile SCH → XSL (cached)
+            # -------------------------------------------------
             xsl_path = self._compile(sch_path)
 
+            # -------------------------------------------------
+            # Execute XSL → SVRL
+            # -------------------------------------------------
             svrl_hash = hashlib.sha256(
                 (sch_path + xml_path).encode("utf-8")
             ).hexdigest()
+
             svrl_path = os.path.join(
                 self.cache_dir, f"svrl-{svrl_hash}.xml"
             )
 
             self._run_xslt(xsl_path, xml_path, svrl_path)
+
+            # -------------------------------------------------
+            # Parse SVRL
+            # -------------------------------------------------
             self._parse_svrl(svrl_path, result, source)
+
