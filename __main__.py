@@ -3,40 +3,59 @@
 import argparse
 import sys
 
-from eracun_validator.asset_builder.cli import main as build_main
-from eracun_validator.validator.cli import main as validate_main
+from .validator.cli import main as validate_main
+from .config import DEFAULT_ASSETS_ROOT
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="eracun-validator",
+        description="UBL invoice validator (EN 16931 / HR CIUS)",
+    )
+
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.required = True
+
+    # -------------------------------------------------
+    # validate command
+    # -------------------------------------------------
+    validate = subparsers.add_parser(
+        "validate",
+        help="Validate an invoice XML file",
+    )
+
+    validate.add_argument(
+        "xml",
+        help="Path to UBL Invoice or CreditNote XML",
+    )
+
+    validate.add_argument(
+        "--assets",
+        default=DEFAULT_ASSETS_ROOT,
+        help="Path to validator assets directory",
+    )
+
+    validate.add_argument(
+        "--profile-only",
+        action="store_true",
+        help="Detect profile and exit without validation",
+    )
+
+    # IMPORTANT: main(args) — args already parsed
+    validate.set_defaults(func=lambda a: validate_main(a))
+
+    return parser
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog="eracun-validator",
-        description="eRacun validation toolkit (assets + validation)",
-    )
-
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    # build command
-    build = sub.add_parser(
-        "build",
-        help="Download and prepare validation assets",
-    )
-    build.set_defaults(func=lambda a: build_main(a))
-
-    # validate command
-    validate = sub.add_parser(
-        "validate",
-        help="Validate XML invoice or credit note",
-    )
-    validate.add_argument(
-        "args",
-        nargs=argparse.REMAINDER,
-        help="Arguments forwarded to validator",
-    )
-    validate.set_defaults(func=lambda a: validate_main(a.args))
-
+    parser = build_parser()
     args = parser.parse_args()
-    return args.func(args)
+
+    try:
+        args.func(args)
+    except AttributeError:
+        parser.print_help()
+        sys.exit(2)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

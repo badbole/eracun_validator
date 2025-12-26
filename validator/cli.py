@@ -1,78 +1,69 @@
 # eracun_validator/validator/cli.py
 
-import argparse
-import os
 import sys
 
 from .core import Validator
+from .xsd import XsdValidator
+from .schematron import SchematronValidator
+from .profiles import detect_profile, resolve_profile
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        prog="eracun-validator validate",
-        description="Validate UBL / EN16931 / CIUS e-Invoice XML documents",
+def main(args):
+    # -------------------------------------------------
+    # Detect & resolve profile
+    # -------------------------------------------------
+    try:
+        profile = detect_profile(args.xml)
+        profile = resolve_profile(profile, args.assets)
+    except Exception as e:
+        print("ERROR: Failed to detect validation profile.")
+        print(str(e))
+        sys.exit(2)
+
+    if getattr(args, "profile", False):
+        print("Detected profile:")
+        print(f"  ID:    {profile['id']}")
+        print(f"  Label: {profile.get('label', '')}")
+        sys.exit(0)
+
+    # -------------------------------------------------
+    # Inform user what will happen
+    # -------------------------------------------------
+    print("Validation profile detected:")
+    print(f"  → {profile['label']} ({profile['id']})")
+
+    if "xsd" in profile:
+        print(f"  XSD root: {profile['xsd']['path']}")
+
+    if "schematron" in profile:
+        print("  Schematron stages:")
+        for stage in profile["schematron"]["stages"]:
+            print(f"    - {stage['id']}: {stage['main']}")
+
+    print()
+
+    # -------------------------------------------------
+    # Build validators
+    # -------------------------------------------------
+    xsd_validator = XsdValidator(args.assets)
+    schematron_validator = SchematronValidator(args.assets)
+
+    validator = Validator(
+        xsd_validator=xsd_validator,
+        schematron_validator=schematron_validator,
     )
 
-    parser.add_argument(
-        "source",
-        help="XML file path or raw XML string",
+    # -------------------------------------------------
+    # Execute validation
+    # -------------------------------------------------
+    result = validator.validate(
+        xml_path=args.xml,
+        profile=profile,
     )
 
-    parser.add_argument(
-        "--assets",
-        default=os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "assets",
-        ),
-        help="Assets root directory (default: eracun_validator/assets)",
-    )
+    # -------------------------------------------------
+    # Output result
+    # -------------------------------------------------
+    print(result.render())
 
-    parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        help="Output format (default: text)",
-    )
-
-    parser.add_argument(
-        "--print-stack",
-        action="store_true",
-        help="Print applied validation stack",
-    )
-
-    args = parser.parse_args(argv)
-
-    validator = Validator(args.assets)
-    result = validator.validate(args.source)
-
-    if args.print_stack:
-        print("Validation stack:")
-        for step in result.validation_stack:
-            print(f" - {step}")
-
-    if args.format == "json":
-        print(result.to_json())
-    else:
-        _print_text(result)
-
-    return 1 if result.has_errors() else 0
-
-
-# -------------------------------------------------
-
-
-def _print_text(result):
-    if not result.has_errors():
-        print("Validation OK")
-        return
-
-    for err in result.errors:
-        loc = f" ({err.get('location')})" if err.get("location") else ""
-        src = f" [{err.get('source')}]" if err.get("source") else ""
-        print(f"ERROR: {err.get('message')}{loc}{src}", file=sys.stderr)
-
-    for warn in result.warnings:
-        loc = f" ({warn.get('location')})" if warn.get("location") else ""
-        src = f" [{warn.get('source')}]" if warn.get("source") else ""
-        print(f"WARNING: {warn.get('message')}{loc}{src}")
+    sys.exit(1 if result.has_errors() else 0)
