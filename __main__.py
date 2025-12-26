@@ -1,49 +1,87 @@
 # eracun_validator/__main__.py
 
 import argparse
+import os
 import sys
 
-from .validator.cli import main as validate_main
-from .config import DEFAULT_ASSETS_ROOT
+from eracun_validator.validator.cli import main as validate_main
+
+
+# ----------------------------------------------------------------------
+# Top-level CLI
+# ----------------------------------------------------------------------
 
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="eracun-validator",
-        description="UBL invoice validator (EN 16931 / HR CIUS)",
+        description="UBL eInvoice validator (EN 16931 / HR CIUS)",
     )
 
-    subparsers = parser.add_subparsers(dest="command")
-    subparsers.required = True
+    parser.add_argument(
+        "--assets",
+        help="Root directory containing XSD and Schematron assets",
+        default=None,
+    )
 
-    # -------------------------------------------------
-    # validate command
-    # -------------------------------------------------
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+    )
+
+    # ------------------------------------------------------------------
+    # validate
+    # ------------------------------------------------------------------
     validate = subparsers.add_parser(
         "validate",
-        help="Validate an invoice XML file",
+        help="Validate an invoice or credit note",
     )
 
     validate.add_argument(
         "xml",
-        help="Path to UBL Invoice or CreditNote XML",
-    )
-
-    validate.add_argument(
-        "--assets",
-        default=DEFAULT_ASSETS_ROOT,
-        help="Path to validator assets directory",
+        help="UBL XML file to validate",
     )
 
     validate.add_argument(
         "--profile-only",
         action="store_true",
-        help="Detect profile and exit without validation",
+        help="Only detect and print profile (no validation)",
     )
 
-    # IMPORTANT: main(args) — args already parsed
-    validate.set_defaults(func=lambda a: validate_main(a))
+    validate.set_defaults(func=validate_main)
 
     return parser
+
+
+# ----------------------------------------------------------------------
+# Command handlers
+# ----------------------------------------------------------------------
+
+# def run_validate(args):
+#     # Resolve assets root
+#     assets_root = (
+#         os.path.abspath(args.assets)
+#         if args.assets
+#         else _default_assets_root()
+#     )
+#
+#     if not os.path.isdir(assets_root):
+#         print(f"ERROR: assets root not found: {assets_root}", file=sys.stderr)
+#         sys.exit(2)
+#
+#     # Delegate to validator CLI
+#     validate_main(
+#         xml_path=args.xml,
+#         assets_root=assets_root,
+#         profile_only=args.profile_only,
+#     )
+
+
+def _default_assets_root():
+    """
+    Default assets path relative to installed package.
+    """
+    here = os.path.dirname(__file__)
+    return os.path.join(here, "assets")
 
 
 def main():
@@ -52,9 +90,9 @@ def main():
 
     try:
         args.func(args)
-    except AttributeError:
-        parser.print_help()
-        sys.exit(2)
+    except KeyboardInterrupt:
+        print("\nInterrupted")
+        sys.exit(130)
 
 
 if __name__ == "__main__":

@@ -9,67 +9,53 @@ from lxml import etree
 
 PROFILE_REGISTRY = {
     "en16931": {
-        "id": "en16931",
-        "label": "EN 16931",
+    "id": "en16931",
+    "label": "EN 16931",
 
-        # --- Detection ---
-        "customization_id": None,
-        "required_namespaces": [],
+    "customization_id": None,
+    "required_namespaces": [],
 
-        # --- XSD ---
-        "xsd": {
-            "path": ["xsd", "ubl-2.1", "xsd", "maindoc"],
-        },
-
-        # --- Schematron ---
-        "schematron": {
-            "iso": ["schematron", "iso"],
-            "stages": [
-                {
-                    "id": "en16931",
-                    "path": ["schematron", "en16931"],
-                    "main": "EN16931-UBL-validation.sch",
-                }
-            ],
-        },
+    "xsd": {
+        "path": ["xsd", "ubl-2.1", "xsd", "maindoc"],
     },
+
+    # 🔑 DRIVER XSL
+    "driver_xsl": ["xsl", "EN16931-UBL-validation.xsl"],
+
+    # 🔑 NO .sch
+    "schematron": [],
+},
+
 
     "hr-cius": {
-        "id": "hr-cius",
-        "label": "HR CIUS 2025",
+    "id": "hr-cius",
+    "label": "HR CIUS 2025",
 
-        # --- Detection ---
-        "customization_id": (
-            "urn:cen.eu:en16931:2017#compliant#"
-            "urn:mfin.gov.hr:cius-2025:1.0#conformant#"
-            "urn:mfin.gov.hr:ext-2025:1.0"
-        ),
-        "required_namespaces": [
-            "urn:hzn.hr:schema:xsd:HRExtensionAggregateComponents-1"
-        ],
+    "customization_id": (
+        "urn:cen.eu:en16931:2017#compliant#"
+        "urn:mfin.gov.hr:cius-2025:1.0#conformant#"
+        "urn:mfin.gov.hr:ext-2025:1.0"
+    ),
+    "required_namespaces": [
+        "urn:hzn.hr:schema:xsd:HRExtensionAggregateComponents-1"
+    ],
 
-        # --- XSD ---
-        "xsd": {
-            "path": ["xsd", "hr-cius", "ubl", "maindoc"],
-        },
-
-        # --- Schematron ---
-        "schematron": {
-            "iso": ["schematron", "iso"],
-            "stages": [
-                {
-                    "id": "en16931",
-                    "path": ["schematron", "en16931"],
-                    "main": "EN16931-UBL-validation.sch",
-                },
-                {
-                    "id": "hr-cius",
-                    "path": ["schematron", "hr-cius"],
-                    "main": "HR-CIUS-EXT-EN16931-UBL.sch",
-                },
-            ],
-        },
+    "xsd": {
+        "path": ["xsd", "hr-cius", "ubl", "maindoc"],
     },
+
+    # 🔑 SAME DRIVER
+    "driver_xsl": ["xsl", "EN16931-UBL-validation.xsl"],
+
+    # 🔑 ONLY HR-CIUS .sch
+    "schematron": [
+        {
+            "id": "hr-cius",
+            "path": ["schematron", "hr-cius", "HR-CIUS-EXT-EN16931-UBL.sch"],
+        }
+    ],
+},
+
 }
 
 # =============================================================================
@@ -150,9 +136,6 @@ def detect_profile(xml_path):
 # =============================================================================
 
 def resolve_profile(profile, assets_root):
-    """
-    Resolve relative asset paths into absolute paths.
-    """
     resolved = dict(profile)
 
     # XSD
@@ -161,17 +144,19 @@ def resolve_profile(profile, assets_root):
         assets_root, *profile["xsd"]["path"]
     )
 
-    # Schematron
-    resolved["schematron"] = dict(profile["schematron"])
-    resolved["schematron"]["iso"] = os.path.join(
-        assets_root, *profile["schematron"]["iso"]
+    # DRIVER XSL
+    resolved["driver_xsl"] = os.path.join(
+        assets_root, *profile["driver_xsl"]
     )
 
-    stages = []
-    for stage in profile["schematron"]["stages"]:
-        s = dict(stage)
-        s["path"] = os.path.join(assets_root, *stage["path"])
-        stages.append(s)
+    # SCHEMATRON (already final shape)
+    schematrons = []
+    for sch in profile.get("schematron", []):
+        schematrons.append({
+            "id": sch["id"],
+            "path": os.path.join(assets_root, *sch["path"]),
+        })
+    resolved["schematron"] = schematrons
 
-    resolved["schematron"]["stages"] = stages
     return resolved
+

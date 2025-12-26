@@ -6,17 +6,25 @@ from lxml import etree
 
 class SchematronValidator:
     """
-    Schematron validator using Saxon-HE and ISO Schematron skeleton.
-    - Compiles .sch → cached .xsl
-    - Executes XSLT to produce SVRL
-    - Parses SVRL into ValidationResult entries
+    Schematron validator using Saxon-HE.
 
-    Notes (per EN16931 / HR-CIUS instructions):
-    - EN16931 schematron is executed first
-    - HR-CIUS EXT schematron is executed AFTER EN16931
-    - HR-CIUS codes.sch is NOT executed separately (already included)
+    Execution model:
+    ----------------
+    1. EN16931 is executed via OFFICIAL DRIVER XSL
+       (EN16931-UBL-validation.xsl)
+       → provides all variables, phases, includes
+
+    2. HR-CIUS schematron is executed AFTER EN16931
+       using ISO skeleton compilation
+
+    This matches:
+    - CEN / Connecting Europe reference implementation
+    - FINA HR-CIUS instructions
     """
 
+    # ------------------------------------------------------------------ #
+    # Init
+    # ------------------------------------------------------------------ #
     def __init__(self, assets_root):
         self.assets_root = assets_root
 
@@ -27,15 +35,63 @@ class SchematronValidator:
             assets_root, "java", "xmlresolver-4.6.4.jar"
         )
 
-        self.iso_dir = os.path.join(assets_root, "schematron", "iso")
-        self.cache_dir = os.path.join(assets_root, "schematron-cache")
+        self.iso_dir = os.path.join(
+            assets_root, "schematron", "iso"
+        )
+        self.cache_dir = os.path.join(
+            assets_root, "schematron-cache"
+        )
         os.makedirs(self.cache_dir, exist_ok=True)
 
     # ------------------------------------------------------------------ #
-    # Compile .sch → .xsl (cached)
+    # Saxon runner
     # ------------------------------------------------------------------ #
-    def _compile(self, sch_path, document_type):
-        h = hashlib.sha256((sch_path + document_type).encode("utf-8")).hexdigest()
+    def _run_saxon(self, source_xml, xsl_path, output_path):
+        cmd = [
+            "java",
+            "-cp",
+            f"{self.saxon_jar}:{self.xmlresolver_jar}",
+            "net.sf.saxon.Transform",
+            f"-s:{source_xml}",
+            f"-xsl:{xsl_path}",
+            f"-o:{output_path}",
+        ]
+        subprocess.run(cmd, check=True)
+
+    # ------------------------------------------------------------------ #
+    # EN16931 DRIVER XSL
+    # ------------------------------------------------------------------ #
+    def run_driver(self, xml_path, driver_xsl_path, result):
+        """
+        Execute official EN16931 driver XSL.
+        This MUST run before any CIUS schematron.
+        """
+
+        h = hashlib.sha256(
+            (xml_path + driver_xsl_path).encode("utf-8")
+        ).hexdigest()
+
+        svrl_path = os.path.join(
+            self.cache_dir, f"svrl-driver-{h}.xml"
+        )
+
+        self._run_saxon(xml_path, driver_xsl_path, svrl_path)
+        self._parse_svrl(
+            svrl_path,
+            result,
+            source="EN16931",
+        )
+
+    # ------------------------------------------------------------------ #
+    # Compile SCH → XSL (ISO skeleton)
+    # ------------------------------------------------------------------ #
+    def _compile_schematron(self, sch_path):
+        """
+        Compile schematron using ISO skeleton (cached).
+        Used ONLY for HR-CIUS.
+        """
+
+        h = hashlib.sha256(sch_path.encode("utf-8")).hexdigest()
         xsl_path = os.path.join(self.cache_dir, f"{h}.xsl")
 
         if os.path.exists(xsl_path):
@@ -46,53 +102,62 @@ class SchematronValidator:
             "iso_schematron_skeleton_for_saxon.xsl",
         )
 
-        phase = "creditnote" if document_type == "creditnote" else "invoice"
-
-        cp = f"{self.saxon_jar}:{self.xmlresolver_jar}"
-
-        subprocess.run([
-            "java",
-            "-cp", cp,
-            "net.sf.saxon.Transform",
-            f"-s:{sch_path}",
-            f"-xsl:{skeleton}",
-            f"-o:{xsl_path}",
-            "-param:phase", phase,
-            "-param:allow-foreign", "true",
-            "-param:generate-fallback", "true",
-        ], check=True)
-
-        return xsl_path
-
-    # ------------------------------------------------------------------ #
-    # Execute compiled XSLT → SVRL
-    # ------------------------------------------------------------------ #
-    def _run_xslt(self, xsl_path, xml_path, svrl_path):
         cmd = [
             "java",
             "-cp",
             f"{self.saxon_jar}:{self.xmlresolver_jar}",
             "net.sf.saxon.Transform",
-            f"-s:{xml_path}",
-            f"-xsl:{xsl_path}",
-            f"-o:{svrl_path}",
+            f"-s:{sch_path}",
+            f"-xsl:{skeleton}",
+            f"-o:{xsl_path}",
+            "allow-foreign=true",
+            "generate-fallback=true",
         ]
+
         subprocess.run(cmd, check=True)
+        return xsl_path
 
     # ------------------------------------------------------------------ #
-    # Parse SVRL
+    # HR-CIUS SCHEMATRON
+    # ------------------------------------------------------------------ #
+    def validate(self, xml_path, schematron_list, result):
+        """
+        Execute HR-CIUS schematron(s) AFTER EN16931 driver.
+        """
+
+        for sch_info in schematron_list:
+            sch_path = sch_info["path"]
+            source = sch_info["id"]
+
+            xsl_path = self._compile_schematron(sch_path)
+
+            h = hashlib.sha256(
+                (xml_path + sch_path).encode("utf-8")
+            ).hexdigest()
+
+            svrl_path = os.path.join(
+                self.cache_dir, f"svrl-hrcius-{h}.xml"
+            )
+
+            self._run_saxon(xml_path, xsl_path, svrl_path)
+            self._parse_svrl(
+                svrl_path,
+                result,
+                source=source,
+            )
+
+    # ------------------------------------------------------------------ #
+    # SVRL PARSER
     # ------------------------------------------------------------------ #
     def _parse_svrl(self, svrl_path, result, source):
         """
-        Parse SVRL file and append entries to ValidationResult.
-
-        Guard:
-        - Some broken runs output plain text instead of XML
+        Parse SVRL and add entries to ValidationResult.
         """
+
+        # Guard against Saxon text output
         with open(svrl_path, "rb") as f:
             head = f.read(64).lstrip()
             if not head.startswith(b"<"):
-                # Not SVRL XML → treat as fatal schematron error
                 result.add_entries([{
                     "level": "error",
                     "code": "SCHEMATRON-RUNTIME",
@@ -110,60 +175,26 @@ class SchematronValidator:
 
         entries = []
 
-        for failed in root.findall(".//svrl:failed-assert", namespaces=ns):
-            text = failed.findtext("svrl:text", namespaces=ns)
+        for failed in root.findall(
+            ".//svrl:failed-assert",
+            namespaces=ns,
+        ):
+            text = failed.findtext(
+                "svrl:text",
+                namespaces=ns,
+            )
             location = failed.get("location")
+
+            rule_id = None
+            if text and text.startswith("["):
+                rule_id = text.split("]")[0].strip("[")
 
             entries.append({
                 "level": "error",
-                "rule_id": (text.split("]")[0].strip("[") if text else None),
+                "rule_id": rule_id,
                 "message": text,
                 "location": location,
                 "source": source,
             })
 
         result.add_entries(entries)
-
-    # ------------------------------------------------------------------ #
-    # Public API
-    # ------------------------------------------------------------------ #
-    def validate(self, xml_path, profile, result):
-        """
-        Execute schematron validation stages defined by the profile.
-        """
-        schematron = profile.get("schematron")
-        if not schematron:
-            return
-
-        stages = schematron.get("stages", [])
-
-        for stage in stages:
-            sch_path = os.path.join(
-                stage["path"],
-                stage["main"],
-            )
-            source = stage["id"]
-
-            # -------------------------------------------------
-            # Compile SCH → XSL (cached)
-            # -------------------------------------------------
-            xsl_path = self._compile(sch_path, result.document_type,)
-
-            # -------------------------------------------------
-            # Execute XSL → SVRL
-            # -------------------------------------------------
-            svrl_hash = hashlib.sha256(
-                (sch_path + xml_path).encode("utf-8")
-            ).hexdigest()
-
-            svrl_path = os.path.join(
-                self.cache_dir, f"svrl-{svrl_hash}.xml"
-            )
-
-            self._run_xslt(xsl_path, xml_path, svrl_path)
-
-            # -------------------------------------------------
-            # Parse SVRL
-            # -------------------------------------------------
-            self._parse_svrl(svrl_path, result, source)
-

@@ -1,69 +1,63 @@
-# eracun_validator/validator/cli.py
-
 import sys
 
 from .core import Validator
 from .xsd import XsdValidator
 from .schematron import SchematronValidator
 from .profiles import detect_profile, resolve_profile
+from ..config import DEFAULT_ASSETS_ROOT
 
 
 def main(args):
+    assets_root = args.assets or DEFAULT_ASSETS_ROOT
     # -------------------------------------------------
     # Detect & resolve profile
     # -------------------------------------------------
     try:
-        profile = detect_profile(args.xml)
-        profile = resolve_profile(profile, args.assets)
+        detected = detect_profile(args.xml)
+        profile = resolve_profile(detected, assets_root)
     except Exception as e:
         print("ERROR: Failed to detect validation profile.")
         print(str(e))
-        sys.exit(2)
+        return 2
 
-    if getattr(args, "profile", False):
+    if args.profile_only:
         print("Detected profile:")
         print(f"  ID:    {profile['id']}")
         print(f"  Label: {profile.get('label', '')}")
-        sys.exit(0)
+        return 0
 
     # -------------------------------------------------
-    # Inform user what will happen
+    # Run validation
     # -------------------------------------------------
-    print("Validation profile detected:")
-    print(f"  → {profile['label']} ({profile['id']})")
+    # core = Validator(
+    #     xml_path=args.xml,
+    #     profile=profile,
+    # )
+    #
+    # result = core.validate()
 
-    if "xsd" in profile:
-        print(f"  XSD root: {profile['xsd']['path']}")
+    if getattr(args, "profile_only", False):
+        print(f"{profile['id']} – {profile.get('label', '')}")
+        return 0
 
-    if "schematron" in profile:
-        print("  Schematron stages:")
-        for stage in profile["schematron"]["stages"]:
-            print(f"    - {stage['id']}: {stage['main']}")
+        # --- build validators ---
+    xsd_validator = XsdValidator(assets_root)
+    schematron_validator = SchematronValidator(assets_root)
 
-    print()
-
-    # -------------------------------------------------
-    # Build validators
-    # -------------------------------------------------
-    xsd_validator = XsdValidator(args.assets)
-    schematron_validator = SchematronValidator(args.assets)
-
-    validator = Validator(
+    core = Validator(
         xsd_validator=xsd_validator,
         schematron_validator=schematron_validator,
     )
 
-    # -------------------------------------------------
-    # Execute validation
-    # -------------------------------------------------
-    result = validator.validate(
+    # --- execute validation ---
+    result = core.validate(
         xml_path=args.xml,
         profile=profile,
     )
 
     # -------------------------------------------------
-    # Output result
+    # Output
     # -------------------------------------------------
     print(result.render())
 
-    sys.exit(1 if result.has_errors() else 0)
+    return 1 if result.has_errors() else 0
