@@ -1,28 +1,24 @@
+# eracun_validator/__main__.py
 import argparse
-from .validator.cli import main as validate_main
+
+from .validator.cli import register_validate
+#from .asset_builder.cli import register_build
 
 
-def run_validate():
+def run() -> int:
     parser = argparse.ArgumentParser("eracun-validator")
 
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    subparsers = parser.add_subparsers(
+        dest="cmd",
+        required=True,
+    )
 
-    v = sub.add_parser("validate", help="Validate XML invoice")
-    v.add_argument("xml", help="XML document")
-    v.add_argument(
-        "--assets",
-        default=None,
-        help="Assets root (defaults from config)",
-    )
-    v.add_argument(
-        "--profile-only",
-        action="store_true",
-        help="Only detect profile, skip validation",
-    )
+    register_validate(subparsers)
+ #   register_build(subparsers)
 
     args = parser.parse_args()
-    return validate_main(args)
+    return args.func(args)
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_validate())
+    raise SystemExit(run())

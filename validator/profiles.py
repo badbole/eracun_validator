@@ -22,7 +22,7 @@ PROFILE_REGISTRY = {
                 {
                     "id": "en16931",
                     "path": ["schematron", "en16931"],
-                    "driver": "EN16931-UBL-validation.xsl",
+                    "driver_xsl": "EN16931-UBL-validation.xsl",
                 }
             ],
         },
@@ -51,13 +51,13 @@ PROFILE_REGISTRY = {
                     "id": "en16931",
                     "path": ["schematron", "en16931"],
                     # --- NEW ---
-                    "driver": "EN16931-UBL-validation.xsl",
+                    "driver_xsl": "EN16931-UBL-validation.xsl",
                 },
                 {
                     "id": "hr-cius",
                     "path": ["schematron", "hr-cius"],
                     # --- NEW ---
-                    "driver": "HR-CIUS-EXT-EN16931-UBL.xsl",
+                    "driver_xsl": "HR-CIUS-EXT-EN16931-UBL.xsl",
                 },
             ],
         },
@@ -146,25 +146,34 @@ def detect_profile(xml_path):
 def resolve_profile(profile, assets_root):
     resolved = dict(profile)
 
-    # XSD
+    # ---------------- XSD ----------------
     resolved["xsd"] = dict(profile["xsd"])
     resolved["xsd"]["path"] = os.path.join(
         assets_root, *profile["xsd"]["path"]
     )
 
-    # DRIVER XSL
-    resolved["driver_xsl"] = os.path.join(
-        assets_root, *profile["driver_xsl"]
+    # ---------------- Schematron ----------------
+    resolved["schematron"] = dict(profile["schematron"])
+    resolved["schematron"]["iso"] = os.path.join(
+        assets_root, *profile["schematron"]["iso"]
     )
 
-    # SCHEMATRON (already final shape)
-    schematrons = []
-    for sch in profile.get("schematron", []):
-        schematrons.append({
-            "id": sch["id"],
-            "path": os.path.join(assets_root, *sch["path"]),
-        })
-    resolved["schematron"] = schematrons
+    stages = []
+    for stage in profile["schematron"]["stages"]:
+        s = dict(stage)
 
+        # resolve absolute path
+        s["path"] = os.path.join(assets_root, *stage["path"])
+
+        # 🚨 ENFORCE driver_xsl
+        if "driver_xsl" not in s:
+            raise KeyError(
+                f"Schematron stage '{s.get('id')}' "
+                f"is missing required key 'driver_xsl'"
+            )
+
+        stages.append(s)
+
+    resolved["schematron"]["stages"] = stages
     return resolved
 

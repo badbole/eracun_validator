@@ -1,38 +1,50 @@
-import sys
+# eracun_validator/validator/cli.py
+import argparse
+import os
+
 from .core import Validator
-from .profiles import detect_profile, resolve_profile
+from .result import write_json
 
 
-def main(args):
-    try:
-        # 1. Detect profile
-        profile = detect_profile(args.xml)
+def register_validate(subparsers):
+    p = subparsers.add_parser(
+        "validate",
+        aliases=["v"],
+        help="Validate XML invoice",
+    )
 
-        # 2. Resolve profile with assets_root (MUST be string)
-        profile = resolve_profile(profile, args.assets)
+    p.add_argument("xml", help="XML document")
+    p.add_argument(
+        "--assets",
+        default=None,
+        help="Assets root (defaults from config)",
+    )
+    p.add_argument(
+        "--profile-only",
+        action="store_true",
+        help="Only detect profile, skip validation",
+    )
 
-    except Exception as e:
-        print("ERROR: Failed to detect validation profile.")
-        print(str(e))
-        return 2
+    p.set_defaults(func=run_validate)
 
-    # Profile-only short circuit
-    if getattr(args, "profile_only", False):
-        print(f"Profile: {profile['id']} — {profile.get('label', '')}")
+
+def run_validate(args: argparse.Namespace) -> int:
+    assets_root = None
+    if args.assets:
+        assets_root = os.path.abspath(args.assets)
+        if not os.path.isdir(assets_root):
+            print(f"assets root '{args.assets}' is not a directory")
+            return 1
+
+    validator = Validator(assets_root=assets_root)
+    profile, doc_type = validator.detect(args.xml)
+
+    print(f"profile: {profile.id} doc_type: {doc_type}")
+
+    if args.profile_only:
         return 0
 
-    # 3. Build validator (no xml_path here)
-    core = Validator(
-        assets_root=args.assets
-    )
+    result = validator.validate(args.xml)
+    print(write_json(result))
 
-    # 4. Execute validation
-    result = core.validate(
-        xml_path=args.xml,
-        profile=profile,
-    )
-
-    # 5. Output
-    print(result.render())
-
-    return 0 if not result.has_errors() else 1
+    return 0

@@ -51,3 +51,6 @@ class ValidationResult:
 
     def to_json(self, indent=2):
         return json.dumps(self.to_dict(), indent=indent)
+
+def write_json(result, indent=2):
+    return result.to_json(indent)

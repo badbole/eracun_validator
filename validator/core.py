@@ -5,9 +5,13 @@ from .result import ValidationResult
 
 
 class Validator:
-    def __init__(self, xsd_validator, schematron_validator):
-        self.xsd_validator = xsd_validator
-        self.schematron_validator = schematron_validator
+    def __init__(self, profile, assets_root, profile_only=False):
+        self.profile = profile
+        self.assets_root = assets_root
+        self.profile_only = profile_only
+
+        self.schematron = SchematronValidator(assets_root)
+        self.xsd = XsdValidator(assets_root)
 
     # -------------------------------------------------
     # Public API
