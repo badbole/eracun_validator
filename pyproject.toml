@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "eracun-validator"
+version = "1.0.0"
+description = "Croatian eRačun (EN16931, PEPPOL, HR-CIUS) UBL Invoice & Credit Note validator"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "eRačun Validator Contributors" }
+]
+keywords = [
+    "eracun",
+    "en16931",
+    "peppol",
+    "hr-cius",
+    "ubl",
+    "invoice",
+    "credit-note",
+    "schematron",
+    "xsd"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "Topic :: Software Development :: Quality Assurance"
+]
+
+requires-python = ">=3.9"
+
+dependencies = [
+    "lxml>=4.9",
+    "requests>=2.31",
+]
+
+
+[project.optional-dependencies]
+
+dev = [
+    "pytest",
+    "coverage",
+    "ruff",
+    "black"
+]
+
+
+[project.urls]
+Homepage = "https://github.com/your-org/eracun-validator"
+Documentation = "https://github.com/your-org/eracun-validator/blob/main/README.md"
+Issues = "https://github.com/your-org/eracun-validator/issues"
+
+
+[project.scripts]
+eracun-validator = "eracun_validator.cli.main:main"
+
+
+[tool.setuptools]
+packages = [
+    "eracun_validator",
+    "eracun_validator.cli",
+    "eracun_validator.downloader",
+    "eracun_validator.validator",
+    "eracun_validator.tests"
+]
+include-package-data = false
+
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+
+[tool.coverage.run]
+branch = true
+source = ["eracun_validator"]
+
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

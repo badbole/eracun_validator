@@ -8,6 +8,8 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+# assets root - generated, docs/asstes wen need in git
+.assets/
 build/
 develop-eggs/
 dist/
