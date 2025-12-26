@@ -34,34 +34,34 @@ class SchematronValidator:
     # ------------------------------------------------------------------ #
     # Compile .sch → .xsl (cached)
     # ------------------------------------------------------------------ #
-    def _compile(self, sch_path):
-        """
-        Compile Schematron (.sch) to XSLT using ISO skeleton.
-        Cache key = sha256(sch_path).
-        """
-        h = hashlib.sha256(sch_path.encode("utf-8")).hexdigest()
+    def _compile(self, sch_path, document_type):
+        h = hashlib.sha256((sch_path + document_type).encode("utf-8")).hexdigest()
         xsl_path = os.path.join(self.cache_dir, f"{h}.xsl")
 
         if os.path.exists(xsl_path):
             return xsl_path
 
         skeleton = os.path.join(
-            self.iso_dir, "iso_schematron_skeleton_for_saxon.xsl"
+            self.iso_dir,
+            "iso_schematron_skeleton_for_saxon.xsl",
         )
 
-        cmd = [
+        phase = "creditnote" if document_type == "creditnote" else "invoice"
+
+        cp = f"{self.saxon_jar}:{self.xmlresolver_jar}"
+
+        subprocess.run([
             "java",
-            "-cp",
-            f"{self.saxon_jar}:{self.xmlresolver_jar}",
+            "-cp", cp,
             "net.sf.saxon.Transform",
             f"-s:{sch_path}",
             f"-xsl:{skeleton}",
             f"-o:{xsl_path}",
-            "allow-foreign=true",
-            "generate-fallback=true",
-        ]
+            "-param:phase", phase,
+            "-param:allow-foreign", "true",
+            "-param:generate-fallback", "true",
+        ], check=True)
 
-        subprocess.run(cmd, check=True)
         return xsl_path
 
     # ------------------------------------------------------------------ #
@@ -147,7 +147,7 @@ class SchematronValidator:
             # -------------------------------------------------
             # Compile SCH → XSL (cached)
             # -------------------------------------------------
-            xsl_path = self._compile(sch_path)
+            xsl_path = self._compile(sch_path, result.document_type,)
 
             # -------------------------------------------------
             # Execute XSL → SVRL
