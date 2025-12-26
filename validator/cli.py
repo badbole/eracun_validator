@@ -1,63 +1,38 @@
 import sys
-
 from .core import Validator
-from .xsd import XsdValidator
-from .schematron import SchematronValidator
 from .profiles import detect_profile, resolve_profile
-from ..config import DEFAULT_ASSETS_ROOT
 
 
 def main(args):
-    assets_root = args.assets or DEFAULT_ASSETS_ROOT
-    # -------------------------------------------------
-    # Detect & resolve profile
-    # -------------------------------------------------
     try:
-        detected = detect_profile(args.xml)
-        profile = resolve_profile(detected, assets_root)
+        # 1. Detect profile
+        profile = detect_profile(args.xml)
+
+        # 2. Resolve profile with assets_root (MUST be string)
+        profile = resolve_profile(profile, args.assets)
+
     except Exception as e:
         print("ERROR: Failed to detect validation profile.")
         print(str(e))
         return 2
 
-    if args.profile_only:
-        print("Detected profile:")
-        print(f"  ID:    {profile['id']}")
-        print(f"  Label: {profile.get('label', '')}")
-        return 0
-
-    # -------------------------------------------------
-    # Run validation
-    # -------------------------------------------------
-    # core = Validator(
-    #     xml_path=args.xml,
-    #     profile=profile,
-    # )
-    #
-    # result = core.validate()
-
+    # Profile-only short circuit
     if getattr(args, "profile_only", False):
-        print(f"{profile['id']} – {profile.get('label', '')}")
+        print(f"Profile: {profile['id']} — {profile.get('label', '')}")
         return 0
 
-        # --- build validators ---
-    xsd_validator = XsdValidator(assets_root)
-    schematron_validator = SchematronValidator(assets_root)
-
+    # 3. Build validator (no xml_path here)
     core = Validator(
-        xsd_validator=xsd_validator,
-        schematron_validator=schematron_validator,
+        assets_root=args.assets
     )
 
-    # --- execute validation ---
+    # 4. Execute validation
     result = core.validate(
         xml_path=args.xml,
         profile=profile,
     )
 
-    # -------------------------------------------------
-    # Output
-    # -------------------------------------------------
+    # 5. Output
     print(result.render())
 
-    return 1 if result.has_errors() else 0
+    return 0 if not result.has_errors() else 1
